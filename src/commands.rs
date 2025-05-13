@@ -122,3 +122,44 @@ pub fn jr_cc_n(cpu: &mut Cpu) {
         cpu.increment_flag = false;
     }
 }
+pub fn xor_n(cpu: &mut Cpu) {
+    let mut flags = (0,0,0,0);
+    let n = match cpu.opcode {
+        0xAF => cpu.get_r8('a'),
+        _ => panic!("Error: Unknown opcode!"),
+    };
+    let a = cpu.get_r8('a');
+
+    let result = n ^ a;
+
+    if result == 0 {
+        flags.0 = 1;
+    }
+
+    cpu.set_r8('a', result);
+    cpu.set_flags(flags);
+
+}
+pub fn jr_n(cpu: &mut Cpu) {
+    let p_c = cpu.get_pc();
+    let n = cpu.get_imm8() as u16;
+    
+
+    let address = n + p_c;
+
+    cpu.set_pc(address);
+    cpu.increment_flag = false;
+}
+pub fn load_n_a(cpu:&mut Cpu) {
+    let nn = cpu.get_imm16() as usize;
+    let a = cpu.get_r8('a');
+
+    cpu.set_memory(nn, a);
+}
+pub fn load_a_n(cpu: &mut Cpu) {
+    let n = match cpu.opcode {
+        0x3E => cpu.get_imm8(),
+        _ => panic!("Error: Unknown opcode!"),
+    };
+    cpu.set_r8('a', n);
+}
