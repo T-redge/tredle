@@ -9,7 +9,7 @@ struct Flags {
 impl Flags {
     pub fn debug_flags(&mut self) {
         println!(
-            "[Z: {}, N: {}, H: {}, C: {}]",
+            "Flags Reg: [Z: {}, N: {}, H: {}, C: {}]",
             self.z, self.n, self.h, self.c
         );
     }
@@ -40,7 +40,7 @@ impl Default for R8 {
 impl R8 {
     pub fn debug_r8(&mut self) {
         println!(
-            "[A: {:#X}, B: {:#X}, C: {:#X}, D: {:#X}, E: {:#X}, H: {:#X}, L: {:#X}]",
+            "8bit Regs: [A: {:#X}, B: {:#X}, C: {:#X}, D: {:#X}, E: {:#X}, H: {:#X}, L: {:#X}]",
                     self.a, self.b, 
                     self.c, self.d, self.e, 
                     self.h, self.l);
@@ -51,9 +51,13 @@ pub struct Cpu {
     pub opcode: u8,
     p_c: usize,
     cmd: Commands,
+    cb_cmds: CbPrefix,
     r8: R8,
     flags: Flags,
     pub increment_flag: bool,
+    ime_flag: bool,
+    stack: Vec<u16>,
+    s_p: usize,
 }
 impl Default for Cpu {
     fn default() -> Self {
@@ -62,9 +66,13 @@ impl Default for Cpu {
             opcode: 0x00,
             p_c: 0x100,
             cmd: Commands::Unknown,
+            cb_cmds: CbPrefix::Unknown,
             r8: R8::default(),
             flags: Flags::default(),
             increment_flag: true,
+            ime_flag: true,
+            stack: vec![0;0xFFFF],
+            s_p: 0xFFFE,
         }
     }
 }
@@ -74,7 +82,7 @@ impl Cpu {
         let mut l_c = 0;
         
         loop {
-            if l_c > 10 {
+            if l_c > 50 {
                 break;
             }
             println!("\nLoop: {}", l_c);
@@ -164,6 +172,16 @@ impl Cpu {
     pub fn set_memory(&mut self,address: usize, value: u8) {
         self.rom[address] = value;
     }
+    pub fn get_memory(&mut self, address: usize) -> u8 {
+        self.rom[address]
+    }
+    pub fn set_ime_flag(&mut self) {
+        self.ime_flag = false;
+    }
+    pub fn push_to_stack(&mut self, address: u16) {
+        self.s_p -= 1;
+        self.stack[self.s_p] = address;
+    }
 }
 
 
@@ -180,19 +198,35 @@ impl Cpu {
         println!("Imm16: {:#X}", self.rom[self.p_c + 2]);
         self.r8.debug_r8();
         self.flags.debug_flags();
+        println!("Stack Pointer: {:#X}", self.s_p);
+        println!("Top of Stack: {:#X}", self.stack[self.s_p]);
     }
     fn process_opcode(&mut self) {
         self.cmd = match self.opcode{
             0x0 => Commands::Nop,
             0x11 => Commands::LoadnNN,
             0x18 => Commands::JrN,
-            0x28 => Commands::JrCCn,
+            0x20|0x28 => Commands::JrCCn,
+            0x2F => Commands::Cpl,
             0x3E => Commands::LoadAn,
             0xAF => Commands::XorN,
             0xC3 => Commands::JumpNN,
-            0xEA => Commands::LoadnA,
+            0xCB => Commands::Cb,
+            0xCD => Commands::CallNN,
+            0xE0 => Commands::LoadhNa,
+            0xE6 => Commands::AndN,
+            0x47|0xEA => Commands::LoadnA,
+            0xF0 => Commands::LoadhAn,
+            0xF3 => Commands::Di,
             0xFE => Commands::CpN,
             _ => Commands::Unknown,
+        };
+    }
+    fn process_cb_opcode(&mut self) {
+        self.cb_cmds = match self.rom[self.p_c + 1] {
+            0x37 => CbPrefix::SwapN,
+            0x87 => CbPrefix::ResBr,
+            _ => CbPrefix::Unknown,
         };
     }
     fn execute_cmd(&mut self) {
@@ -202,12 +236,30 @@ impl Cpu {
             Commands::LoadnNN => load_n_nn(self),
             Commands::JrN => jr_n(self),
             Commands::JrCCn => jr_cc_n(self),
+            Commands::Cpl => cpl(self),
             Commands::LoadAn => load_a_n(self),
             Commands::XorN => xor_n(self),
             Commands::JumpNN => jump_nn(self),
+            Commands::Cb => {
+                self.process_cb_opcode();
+                self.execute_cb_cmd();
+            }
+            Commands::CallNN => call_nn(self),
+            Commands::LoadhNa => loadh_n_a(self),
+            Commands::AndN => and_n(self),
             Commands::LoadnA => load_n_a(self),
+            Commands::LoadhAn => loadh_a_n(self),
+            Commands::Di => di(self),
             Commands::CpN => cp_n(self),
             Commands::Unknown => panic!("Error: Unkown command!"),
+            _ => panic!("Error: Unknown command!"),
+        }
+    }
+    fn execute_cb_cmd(&mut self) {
+        self.cb_cmds.print();
+        match self.cb_cmds {
+            CbPrefix::SwapN => swap_n(self),
+            CbPrefix::ResBr => res_b_r(self),
             _ => panic!("Error: Unknown command!"),
         }
     }
@@ -218,4 +270,5 @@ impl Cpu {
             self.increment_flag = true;
         }
     }
+    
 }
