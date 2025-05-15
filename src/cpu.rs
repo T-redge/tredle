@@ -1,4 +1,4 @@
-use crate::{commands::{*, Commands}, load_rom};
+use crate::{commands::*,Commands,CbPrefix, load_rom};
 #[derive(Default)]
 struct Flags {
     z: u8,
@@ -71,7 +71,7 @@ impl Default for Cpu {
             flags: Flags::default(),
             increment_flag: true,
             ime_flag: true,
-            stack: vec![0;0xFFFF],
+            stack: vec![0;0x10000],
             s_p: 0xFFFE,
         }
     }
@@ -82,7 +82,7 @@ impl Cpu {
         let mut l_c = 0;
         
         loop {
-            if l_c > 50 {
+            if l_c > 100 {
                 break;
             }
             println!("\nLoop: {}", l_c);
@@ -96,14 +96,12 @@ impl Cpu {
     }
     pub fn get_imm8(&mut self) -> u8 {
         let imm8 = self.rom[self.p_c + 1];
-        if self.opcode != 0x18 | 0x28 | 0xC3 {
-            self.p_c += 1;
-        }
+
         imm8
     }
     pub fn get_imm16(&mut self) -> u16 {
         let imm16 = (self.rom[self.p_c + 1] as u16) | (self.rom[self.p_c + 2] as u16) << 8;
-        self.p_c += 2;
+
         imm16
     }
     pub fn set_pc(&mut self, value: u16) {
@@ -123,7 +121,8 @@ impl Cpu {
             'l' => self.r8.l = value,
             _ => panic!("Error: Unknown register!"),
         }
-    }pub fn get_r8(&mut self, reg: char) -> u8 {
+    }
+    pub fn get_r8(&mut self, reg: char) -> u8 {
         match reg {
             'a' => self.r8.a,
             'b' => self.r8.b,
@@ -132,6 +131,32 @@ impl Cpu {
             'e' => self.r8.e,
             'h' => self.r8.h,
             'l' => self.r8.l,
+            _ => panic!("Error: Unknown register!"),
+        }
+    }
+    pub fn get_r16(&mut self, reg: &str) -> u16 {
+        match reg {
+            "bc" => {
+                let b = self.r8.b;
+                let c = self.r8.c;
+                let bc = (b as u16) << 8 | c as u16;
+
+                bc
+            }
+            "de" => {
+                let d = self.r8.d;
+                let e = self.r8.e;
+                let de = (d as u16) << 8 | e as u16;
+
+                de
+            }
+            "hl" => {
+                let h = self.r8.h;
+                let l = self.r8.l;
+                let hl = (h as u16) << 8 | l as u16;
+
+                hl
+            }
             _ => panic!("Error: Unknown register!"),
         }
     }
@@ -182,8 +207,17 @@ impl Cpu {
         self.s_p -= 1;
         self.stack[self.s_p] = address;
     }
-}
+    pub fn pop_from_stack(&mut self) -> u16 {
+        let pop = self.stack[self.s_p];
+        self.stack[self.s_p] = 0;
+        self.s_p += 1;
 
+        pop
+    }
+    pub fn set_sp(&mut self, value: u16) {
+        self.s_p = value as usize;
+    }
+}
 
 
 //Private Functions
@@ -194,8 +228,8 @@ impl Cpu {
     fn debug_cpu(&mut self) {
         println!("Program Counter: {:#X}", self.p_c);
         println!("Opcode: {:#X}", self.opcode);
-        println!("Imm8: {:#X}", self.rom[self.p_c + 1]);
-        println!("Imm16: {:#X}", self.rom[self.p_c + 2]);
+        println!("Imm8: {:#X}", self.get_imm8());
+        println!("Imm16: {:#X}", self.get_imm16());
         self.r8.debug_r8();
         self.flags.debug_flags();
         println!("Stack Pointer: {:#X}", self.s_p);
@@ -204,13 +238,19 @@ impl Cpu {
     fn process_opcode(&mut self) {
         self.cmd = match self.opcode{
             0x0 => Commands::Nop,
-            0x11 => Commands::LoadnNN,
+            0x01|0x11|0x21|0x31 => Commands::LoadnNN,
+            0x0B => Commands::DecNN,
             0x18 => Commands::JrN,
             0x20|0x28 => Commands::JrCCn,
+            0x23 => Commands::IncNN,
             0x2F => Commands::Cpl,
+            0x37 => Commands::Scf,
             0x3E => Commands::LoadAn,
+            0x36|0x61 => Commands::LoadR1R2,
             0xAF => Commands::XorN,
+            0xB0 => Commands::OrN,
             0xC3 => Commands::JumpNN,
+            0xC9 => Commands::Ret,
             0xCB => Commands::Cb,
             0xCD => Commands::CallNN,
             0xE0 => Commands::LoadhNa,
@@ -234,12 +274,18 @@ impl Cpu {
         match self.cmd {
             Commands::Nop => nop(),
             Commands::LoadnNN => load_n_nn(self),
+            Commands::DecNN => dec_nn(self),
             Commands::JrN => jr_n(self),
             Commands::JrCCn => jr_cc_n(self),
+            Commands::IncNN => inc_nn(self),
             Commands::Cpl => cpl(self),
+            Commands::Scf => scf(self),
             Commands::LoadAn => load_a_n(self),
+            Commands::LoadR1R2 => load_r1_r2(self),
             Commands::XorN => xor_n(self),
+            Commands::OrN => or_n(self),
             Commands::JumpNN => jump_nn(self),
+            Commands::Ret => ret(self),
             Commands::Cb => {
                 self.process_cb_opcode();
                 self.execute_cb_cmd();
@@ -251,8 +297,7 @@ impl Cpu {
             Commands::LoadhAn => loadh_a_n(self),
             Commands::Di => di(self),
             Commands::CpN => cp_n(self),
-            Commands::Unknown => panic!("Error: Unkown command!"),
-            _ => panic!("Error: Unknown command!"),
+            Commands::Unknown | _ => panic!("Error: Unkown command!"),
         }
     }
     fn execute_cb_cmd(&mut self) {

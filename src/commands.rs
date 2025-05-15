@@ -1,90 +1,4 @@
 use crate::cpu::*;
-#[derive(Debug, PartialEq)]
-pub enum Commands{
-    Unknown,
-    Cb,
-    LoadNNn,
-    LoadR1R2,
-    LoadAn,
-    LoadnA,
-    LoadAc,
-    LoadCa,
-    LoaddAhl,
-    LoaddHLa,
-    LoadiAhl,
-    LoadiHLa,
-    LoadhNa,
-    LoadhAn,
-    LoadnNN,
-    LoadSPhl,
-    LoadHLspN,
-    LoadNNsp,
-    PushNN,
-    PopNN,
-    AddAn,
-    AdcAn,
-    SubN,
-    SbcAn,
-    AndN,
-    OrN,
-    XorN,
-    CpN,
-    IncN,
-    DecN,
-    AddHLn,
-    AddSPn,
-    IncNN,
-    DecNN,
-    Daa,
-    Cpl,
-    Ccf,
-    Scf,
-    Nop,
-    Halt,
-    Stop,
-    Di,
-    Ei,
-    Rlca,
-    Rla,
-    Rrca,
-    Rra,
-    JumpNN,
-    JumpCCnn,
-    JumpHL,
-    JrN,
-    JrCCn,
-    CallNN,
-    CallCCnn,
-    RstN,
-    Ret,
-    RetCC,
-    Reti,
-}
-impl Commands {
-    pub fn print(&self) {
-        println!("{:#?}", self);
-    }
-}
-#[derive(Debug)]
-pub enum CbPrefix {
-    Unknown,
-    RlcN,
-    RlN,
-    RrcN,
-    RrN,
-    SlaN,
-    SraN,
-    SrlN,
-    BitBr,
-    SetBr,
-    ResBr,
-    SwapN,
-}
-impl CbPrefix {
-    pub fn print(&self) {
-        println!("{:#?}", self);
-    }
-}
 
 pub fn nop(){}
 pub fn jump_nn(cpu: &mut Cpu) {
@@ -95,8 +9,14 @@ pub fn jump_nn(cpu: &mut Cpu) {
 }
 pub fn load_n_nn(cpu: &mut Cpu) {
     let imm16 = cpu.get_imm16();
-
-    cpu.set_r16("de", imm16);
+    match cpu.opcode {
+        0x01 => cpu.set_r16("bc", imm16),
+        0x11 => cpu.set_r16("de", imm16),
+        0x21 => cpu.set_r16("hl", imm16),
+        0x31 => cpu.set_sp(imm16),
+        _ => panic!("Error: Unknown opcode!"),
+    }
+    
 }
 pub fn cp_n(cpu: &mut Cpu) {
     let mut flags = (0,1,0,0);
@@ -248,11 +168,80 @@ pub fn and_n(cpu: &mut Cpu) {
     cpu.set_r8('a', result);
 }
 pub fn swap_n(cpu: &mut Cpu) {
+    let mut flags = (0,0,0,0);
     let p_c = cpu.get_pc() as usize;
     let reg = match cpu.get_memory(p_c + 1) {
         0x37 => cpu.get_r8('a'),
         _ => panic!("Error: Unknown Opcode!"),
     };
+    let hi_n = reg & 0xF0;
+    let lo_n = reg & 0x0F;
 
+    let result = hi_n >> 4 | lo_n << 4;
+    if result == 0 {
+        flags.0 = 1;
+    }
+    match cpu.get_memory(p_c + 1) {
+        0x37 => cpu.set_r8('a', result),
+        _ => panic!("Error: Unknown Opcode!"),
+    }
+    cpu.set_flags(flags);
+}
+pub fn scf(cpu: &mut Cpu) {
+    let f_z = cpu.get_flag('z');
+    cpu.set_flags((f_z,0,0,1));
+}
+pub fn or_n(cpu: &mut Cpu) {
+    let n = match cpu.opcode {
+        0xB0 => cpu.get_r8('b'),
+        _ => panic!("Error: Opcode unknown!"),
+    };
+    let a = cpu.get_r8('a');
+    let mut f_z = 0;
+
+    let result = n | a;
+    if result == 0 {
+        f_z = 1;
+    }
+    cpu.set_flags((f_z,0,0,0));
+    cpu.set_r8('a', result);
+}
+pub fn ret(cpu: &mut Cpu) {
+    let address = cpu.pop_from_stack();
     
+    cpu.set_pc(address);
+    cpu.increment_flag = false;
+}
+pub fn load_r1_r2(cpu: &mut Cpu) {
+    match cpu.opcode {
+        0x61 => {
+            let r2 = cpu.get_r8('c');
+            cpu.set_r8('h', r2);
+        }
+        0x36 => {
+            let r2 = cpu.get_imm8() as u16;
+            cpu.set_r16("hl", r2);
+        }
+        _ => panic!("Error: Opcode unknown!"),
+    };
+}
+pub fn inc_nn(cpu: &mut Cpu) {
+    match cpu.opcode {
+        0x23 => {
+            let mut hl = cpu.get_r16("hl");
+            hl += 1;
+            cpu.set_r16("hl", hl);
+        }
+        _ => panic!("Error: Unknown opcode!"),
+    }
+}
+pub fn dec_nn(cpu: &mut Cpu) {
+    match cpu.opcode {
+        0x0B => {
+            let mut bc = cpu.get_r16("bc");
+            bc -= 1;
+            cpu.set_r16("bc", bc);
+        }
+        _ => panic!("Error: Unknown opcode!"),
+    }
 }
